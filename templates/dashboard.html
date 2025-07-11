@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block content %}
+<h2>Licenças Ativas</h2>
+<form method="post" action="{{ url_for('admin_criar') }}">
+  <input type="email" name="email" placeholder="Email para nova licença" required>
+  <button type="submit">Criar Licença</button>
+</form>
+<table>
+  <tr><th>Chave</th><th>Email</th><th>Usada</th><th>Criada</th><th>Ativada</th><th>Ações</th></tr>
+  {% for lic in licencas %}
+  <tr>
+    <td>{{ lic[0] }}</td>
+    <td>{{ lic[1] }}</td>
+    <td>{{ 'Sim' if lic[2] else 'Não' }}</td>
+    <td>{{ lic[3] }}</td>
+    <td>{{ lic[4] or '-' }}</td>
+    <td><a href="{{ url_for('admin_remover', key=lic[0]) }}">Remover</a></td>
+  </tr>
+  {% endfor %}
+</table>
+<p><a href="{{ url_for('logout') }}">Sair</a></p>
+{% endblock %}

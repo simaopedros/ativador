@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}Admin Dublador AI{% endblock %}</title>
+  <style>
+    body { font-family: Arial; background: #f4f4f4; padding: 20px; }
+    .box { background: #fff; padding: 20px; border-radius: 8px; max-width: 800px; margin: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; border-bottom: 1px solid #ddd; }
+    input { padding: 5px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>
