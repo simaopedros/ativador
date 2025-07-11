@@ -1,34 +1,26 @@
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin
 from dotenv import load_dotenv
-import sqlite3
-import uuid
-import datetime
-import os
+import sqlite3, uuid, datetime, os
 
-# --- Carrega variáveis do .env ---
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "default-secret-key")
+app.secret_key = os.getenv("SECRET_KEY", "default")
 DB_NAME = os.getenv("DB_NAME", "database.db")
 
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "1234")
 
-# --- Login Setup ---
 login_manager = LoginManager()
 login_manager.init_app(app)
 
 class Admin(UserMixin):
-    def __init__(self, id):
-        self.id = id
+    def __init__(self, id): self.id = id
 
 @login_manager.user_loader
-def load_user(user_id):
-    return Admin(user_id)
+def load_user(user_id): return Admin(user_id)
 
-# --- Banco de Dados ---
 def init_db():
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
@@ -38,12 +30,12 @@ def init_db():
                 email TEXT,
                 used INTEGER DEFAULT 0,
                 created_at TEXT,
-                activated_at TEXT
+                activated_at TEXT,
+                machine_id TEXT
             )
         ''')
         conn.commit()
 
-# --- Rotas Admin ---
 @app.route("/admin/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -64,7 +56,7 @@ def logout():
 def dashboard():
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
-        c.execute("SELECT key, email, used, created_at, activated_at FROM licenses ORDER BY created_at DESC")
+        c.execute("SELECT key, email, used, created_at, activated_at, machine_id FROM licenses ORDER BY created_at DESC")
         licencas = c.fetchall()
     return render_template("dashboard.html", licencas=licencas)
 
@@ -90,14 +82,12 @@ def admin_remover(key):
         conn.commit()
     return redirect(url_for("dashboard"))
 
-# --- API ---
 @app.route("/api/gerar", methods=["POST"])
 def gerar_licenca():
     data = request.get_json()
     email = data.get("email")
     if not email:
         return jsonify({"error": "Email é obrigatório"}), 400
-
     licenca = str(uuid.uuid4()).replace("-", "")
     created_at = datetime.datetime.utcnow().isoformat()
     with sqlite3.connect(DB_NAME) as conn:
@@ -110,31 +100,44 @@ def gerar_licenca():
 def ativar_licenca():
     data = request.get_json()
     key = data.get("key")
-    if not key:
-        return jsonify({"success": False, "message": "Chave não fornecida"}), 400
+    machine_id = data.get("machine_id")
+
+    if not key or not machine_id:
+        return jsonify({"success": False, "message": "Chave e ID da máquina são obrigatórios"}), 400
 
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
-        c.execute("SELECT used FROM licenses WHERE key = ?", (key,))
+        c.execute("SELECT used, machine_id FROM licenses WHERE key = ?", (key,))
         result = c.fetchone()
+
         if not result:
             return jsonify({"success": False, "message": "Chave inválida"}), 404
-        if result[0] == 1:
-            return jsonify({"success": False, "message": "Chave já utilizada"}), 403
 
-        c.execute("UPDATE licenses SET used = 1, activated_at = ? WHERE key = ?", (datetime.datetime.utcnow().isoformat(), key))
-        conn.commit()
-    return jsonify({"success": True, "message": "Licença ativada com sucesso"})
+        used, saved_machine_id = result
+
+        if used and saved_machine_id != machine_id:
+            return jsonify({"success": False, "message": "Licença já usada em outra máquina"}), 403
+
+        if not used:
+            c.execute("UPDATE licenses SET used = 1, activated_at = ?, machine_id = ? WHERE key = ?",
+                      (datetime.datetime.utcnow().isoformat(), machine_id, key))
+            conn.commit()
+
+        return jsonify({"success": True, "message": "Licença ativada com sucesso"})
 
 @app.route("/api/verificar", methods=["POST"])
 def verificar_licenca():
     data = request.get_json()
     key = data.get("key")
+    machine_id = data.get("machine_id")
+
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
-        c.execute("SELECT used FROM licenses WHERE key = ?", (key,))
+        c.execute("SELECT used, machine_id FROM licenses WHERE key = ?", (key,))
         result = c.fetchone()
-        return jsonify({"valid": result[0] == 1 if result else False})
+        if result and result[0] == 1 and result[1] == machine_id:
+            return jsonify({"valid": True})
+        return jsonify({"valid": False})
 
 @app.route("/api/cancelar", methods=["POST"])
 def cancelar_licenca():
@@ -142,14 +145,12 @@ def cancelar_licenca():
     email = data.get("email")
     if not email:
         return jsonify({"error": "Email é obrigatório"}), 400
-
     with sqlite3.connect(DB_NAME) as conn:
         c = conn.cursor()
         c.execute("DELETE FROM licenses WHERE email = ?", (email,))
         conn.commit()
     return jsonify({"success": True, "message": "Licença cancelada"})
 
-# --- Main ---
 if __name__ == "__main__":
     init_db()
     app.run(host="0.0.0.0", port=5000)
